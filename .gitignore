@@ -1,0 +1,6 @@
+data/
+log_*/
+grads/
+wandb/
+__pycache__/
+
