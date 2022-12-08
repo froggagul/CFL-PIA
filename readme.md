@@ -19,3 +19,10 @@ date: 12/7 ~ current
 ```
 status: https://wandb.ai/froggagul/attack10?workspace=user-froggagul
 result: tbd
+
+## Debug
+```shell
+// wandb offline // run if want to not sync to wandb
+./scripts/run_test.sh
+```
+status: https://wandb.ai/froggagul/test
