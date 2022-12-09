@@ -1,6 +1,6 @@
 # Experiments
 ## gender - race_black
-date: 11/29 ~ 12/7 (expected)
+date: 11/29 ~ 12/7
 
 
 ```shell
@@ -8,7 +8,7 @@ date: 11/29 ~ 12/7 (expected)
 ./scripts/run_all_1.sh
 ```
 status: https://wandb.ai/froggagul/attack9
-result: tbd
+result: https://docs.google.com/spreadsheets/d/1aJj5xk6wD8Z83jCnjUV0xXZgQL-zhZn54P-b0O66JGs/edit#gid=1614064136
 
 ## race - glasses_sunglasses
 date: 12/7 ~ current
@@ -17,7 +17,7 @@ date: 12/7 ~ current
 ./scripts/run_all_2.sh
 ./scripts/run_all_3.sh
 ```
-status: https://wandb.ai/froggagul/attack10?workspace=user-froggagul
+status: https://wandb.ai/froggagul/attack10
 result: tbd
 
 ## Debug
