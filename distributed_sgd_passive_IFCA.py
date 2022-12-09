@@ -24,6 +24,11 @@ from load_lfw import load_lfw_with_attrs, BINARY_ATTRS, MULTI_ATTRS
 from metrics import AUROC as AUROCMetric
 import wandb
 
+from torchdp.privacy_engine import PrivacyEngine
+from torchdp.per_sample_gradient_clip import PerSampleGradientClipper
+from tensorflow_privacy.privacy.analysis.compute_noise_from_budget_lib import compute_noise
+
+
 # 저장 디렉토리
 SAVE_DIR = './grads/'
 
@@ -80,6 +85,11 @@ def weights_init(m):  # weight 초기화
 def conv_shape(x, k, p=0, s=1,
                d=1):  # x=dim_input, p=padding, d=dilation, k=kernel_size, s=stride # convolution 차원 계산 함수
     return int((x + 2 * p - d * (k - 1) - 1) / s + 1)
+def gaussian_noise(data_shape, s, sigma, device=None):
+    """
+    Gaussian noise
+    """
+    return torch.normal(0, sigma * s, data_shape).to(device)
 
 
 def calculate_shape(init):  # 최종 output 차원 계산
@@ -116,13 +126,18 @@ class cnn_feat_extractor(nn.Module):  # CNN 모델
 
 
 class nm_cnn(nn.Module):  # 최종 classifier, optimizer 등
-    def __init__(self, classes=2, input_shape=(3, 50, 50), lr=0.01, n=128):
+    def __init__(self, classes=2, input_shape=(3, 50, 50), lr=0.01, n=128,args=None):
         super().__init__()
         self.fe = cnn_feat_extractor(input_shape, n)
         self.fc2 = nn.Linear(256, classes)
         self.criterion = nm_loss
         self.optimizer = optim.SGD(self.parameters(), lr)
+        if args.dp:
+            self.clipper = PerSampleGradientClipper(self,args.clip)
+            #self.criterion = nn.CrossEntropyLoss()#(reduction='none')
+            
 
+            
     def forward(self, x):
         x = self.fe(x)
         x = nn.functional.softmax(self.fc2(x), dim=1)
@@ -162,7 +177,7 @@ def gen_batch(x, y, n=1):
 
 
 def train_lfw(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_clusters=3, num_iteration=3000,
-              victim_all_nonprop=False, balance=False, k=5, train_size=0.3, cuda=-1, seed_data=54321, seed_main=12345):
+              victim_all_nonprop=False, balance=False, k=5, train_size=0.3, cuda=-1, seed_data=54321, seed_main=12345,args=None):
     x, y, prop = load_lfw_with_attrs(task, attr)
     prop_dict = MULTI_ATTRS[attr] if attr in MULTI_ATTRS else BINARY_ATTRS[attr]
 
@@ -200,13 +215,14 @@ def train_lfw(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_
             train_size=train_size,
             cuda=cuda,
             seed_data=seed_data,
-            seed_main=seed_main
+            seed_main=seed_main,
+            args= args
         )
     return filename
 
-def build_worker(input_shape, classes=2, lr=None, device='cpu'):  # worker 1개 생성하고 초기화
+def build_worker(input_shape, classes=2, lr=None, device='cpu',args=None):  # worker 1개 생성하고 초기화
 
-    normal_network = nm_cnn(classes, input_shape, lr).to(device)
+    normal_network = nm_cnn(classes, input_shape, lr,args=args).to(device)
     normal_network.apply(weights_init)
     normal_network.train()
 
@@ -393,7 +409,7 @@ def aggregate_dicts(dicts):  # attacker를 제외한 모델의 gradient를 더�
 def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, warm_up_iters=100,
                         input_shape=(None, 3, 50, 50), n_workers=2, n_clusters=3, lr=0.01, attacker_id=1,
                         filename="data",
-                        p_prop=0.5, victim_all_nonprop=True, k=5, cuda=-1, seed_data=54321, seed_main=12345):
+                        p_prop=0.5, victim_all_nonprop=True, k=5, cuda=-1, seed_data=54321, seed_main=12345,args=None):
     if cuda == '-1':
         device = torch.device('cpu')
     elif torch.cuda.is_available():
@@ -429,7 +445,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
 
     classes = len(np.unique(y_test))
     # build test network
-    network_global = nm_cnn(classes=classes, input_shape=input_shape).to(device)  # global model
+    network_global = nm_cnn(classes=classes, input_shape=input_shape,args=args).to(device)  # global model
     network_global.apply(weights_init)
     network_global.train()
 
@@ -442,7 +458,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
     cluster_networks = []
     cluster_params = []
     for i in range(n_clusters):
-        network = nm_cnn(classes=classes, input_shape=input_shape).to(device)
+        network = nm_cnn(classes=classes, input_shape=input_shape,args=args).to(device)
         network.apply(weights_init)
         network.train()
 
@@ -488,7 +504,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
 
             logger.info('Participant {} with {} data'.format(i, len(splitted_X[i])))
 
-        network = build_worker(input_shape, classes=classes, lr=lr, device=device)  # worker들 생성
+        network = build_worker(input_shape, classes=classes, lr=lr, device=device,args=args)  # worker들 생성
         worker_networks.append(network)
         params = OrderedDict()
         for name, param in network.named_parameters():
@@ -496,7 +512,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
                 params[name] = param
         worker_params.append(params)
 
-        network_IFCA = build_worker(input_shape, classes=classes, lr=lr, device=device)  # CFL용 worker들 생성
+        network_IFCA = build_worker(input_shape, classes=classes, lr=lr, device=device,args=args)  # CFL용 worker들 생성
         worker_networks_IFCA.append(network_IFCA)
         params = OrderedDict()
         for name, param in network_IFCA.named_parameters():
@@ -588,8 +604,17 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
             loss.backward()
 
             grads_dict = OrderedDict()
-            for param in params.keys():
-                grads_dict[param] = copy.deepcopy(params[param].grad)
+
+            if args.dp:
+                network.clipper.step()
+                for param in params.keys():
+
+                    params[param].grad += gaussian_noise(params[param].shape, args.clip/32, args.ep, device=device)
+                    grads_dict[param] = copy.deepcopy(params[param].grad)              
+            else:
+                
+                for param in params.keys():
+                    grads_dict[param] = copy.deepcopy(params[param].grad)
 
             if i != attacker_id:
                 aggr_grad.append(grads_dict)  # 공격자를 제외한 gradient 수집
@@ -619,8 +644,19 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
                 loss_list.append(loss.item())
 
                 grads_dict = OrderedDict()
-                for param in params_IFCA.keys():
-                    grads_dict[param] = copy.deepcopy(params_IFCA[param].grad)
+                if args.dp:
+                    
+                    for param in params.keys():
+
+                        params_IFCA[param].grad += gaussian_noise(params_IFCA[param].shape, args.clip/32, args.ep, device=device)
+
+                        grads_dict[param] = copy.deepcopy(params_IFCA[param].grad)
+
+                    pass
+                else:
+                    for param in params_IFCA.keys():
+                        grads_dict[param] = copy.deepcopy(params_IFCA[param].grad)
+        
                 grads_list.append(grads_dict)
 
             min_loss = min(loss_list)
@@ -824,9 +860,15 @@ if __name__ == '__main__':
     parser.add_argument('-k', help='k', type=int, default=5)
     parser.add_argument('-ds', help='data seed (-1 for time-dependent seed)', type=int, default=54321)
     parser.add_argument('-ms', help='main seed (-1 for time-dependent seed)', type=int, default=12345)
+    parser.add_argument('-clip', help='clipping norm',type=float, default=4)
+    parser.add_argument('-ep', help='Epsilon for DP', type=float, default=1.0)
+    parser.add_argument('-dp', help='DP on', action='store_true', default=False)
     parser.add_argument('--ts', help='Train size', type=float, default=0.3)
     parser.add_argument('-c', help='CUDA num (-1 for CPU-only)', default='-1')
-
+    parser.add_argument('-clip', help='clipping norm',type=float, default=4)
+    parser.add_argument('-ep', help='Epsilon for DP', type=float, default=1.0)
+    parser.add_argument('-dp', help='DP on', action='store_true', default=False)
+    
     args = parser.parse_args()
 
     if args.ds == -1: # seed for dataset generation
@@ -841,6 +883,6 @@ if __name__ == '__main__':
 
     start_time = time.time()
     train_lfw(args.t, args.a, args.pi, args.pp, args.nw, args.nc, args.ni, args.van, args.b, args.k, args.ts, args.c,
-              seed_data, seed_main)
+              seed_data, seed_main,args)
     duration = (time.time() - start_time)
     logger.info("SGD ended in %0.2f hour (%.3f sec) " % (duration / float(3600), duration))

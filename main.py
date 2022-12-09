@@ -28,7 +28,9 @@ if __name__ == '__main__':
     parser.add_argument('-ms', help='main seed (-1 for time-dependent seed)', type=int, default=12345)
     parser.add_argument('--ts', help='Train size', type=float, default=0.3)
     parser.add_argument('-c', help='CUDA num (-1 for CPU-only)', default=-1)
-
+    parser.add_argument('-clip', help='clipping norm',type=float, default=4)
+    parser.add_argument('-ep', help='Epsilon for DP', type=float, default=1.0)
+    parser.add_argument('-dp', help='DP on', action='store_true', default=False)
     args = parser.parse_args()
 
     if args.ds == -1:
@@ -49,7 +51,7 @@ if __name__ == '__main__':
 
     start_time = time.time()
     filename = train_lfw(args.t, args.a, args.pi, args.pp, args.nw, args.nc, args.ni, args.van, args.b, args.k, args.ts, args.c,
-              seed_data, seed_main)
+                         seed_data, seed_main,args)
     evaluate_lfw(filename)
  
     duration = (time.time() - start_time)
