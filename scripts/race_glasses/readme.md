@@ -7,4 +7,4 @@ run from root of workspace
 ./scripts/race_glasses/run_all_3.sh
 ```
 status: https://wandb.ai/froggagul/attack10?workspace=user-froggagul
-result: tbd
+result: https://docs.google.com/spreadsheets/d/1aJj5xk6wD8Z83jCnjUV0xXZgQL-zhZn54P-b0O66JGs/edit#gid=1614064136
