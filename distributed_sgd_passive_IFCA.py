@@ -445,7 +445,9 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
 
     classes = len(np.unique(y_test))
     # build test network
-    network_global = nm_cnn(classes=classes, input_shape=input_shape,args=args).to(device)  # global model
+    args_dp = copy.deepcopy(args)
+    args_dp.dp = False
+    network_global = nm_cnn(classes=classes, input_shape=input_shape,args=args_dp).to(device)  # global model
     network_global.apply(weights_init)
     network_global.train()
 
@@ -458,7 +460,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
     cluster_networks = []
     cluster_params = []
     for i in range(n_clusters):
-        network = nm_cnn(classes=classes, input_shape=input_shape,args=args).to(device)
+        network = nm_cnn(classes=classes, input_shape=input_shape,args=args_dp).to(device)
         network.apply(weights_init)
         network.train()
 
@@ -632,7 +634,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
             grads_list = []
             for j in range(n_clusters):
                 # check ith cluster
-                # cluster_network = cluster_networks[j]
+                #cluster_network = cluster_networks[j]
                 cluster_param = cluster_params[j]
 
                 set_local_single(cluster_param, params_IFCA)
@@ -645,7 +647,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
 
                 grads_dict = OrderedDict()
                 if args.dp:
-                    
+                    network_IFCA.clipper.step()
                     for param in params.keys():
 
                         params_IFCA[param].grad += gaussian_noise(params_IFCA[param].shape, args.clip/32, args.ep, device=device)
