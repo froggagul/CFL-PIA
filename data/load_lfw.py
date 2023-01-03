@@ -6,8 +6,8 @@ import pandas as pd
 from PIL import Image
 from imageio import imread
 from sklearn.datasets import fetch_lfw_people
+from constant import DATA_DIR
 
-DATA_DIR = './data/'
 if not os.path.exists(DATA_DIR):
     os.mkdir(DATA_DIR)
 

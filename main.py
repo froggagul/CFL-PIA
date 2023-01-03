@@ -31,6 +31,9 @@ if __name__ == '__main__':
     parser.add_argument('-clip', help='clipping norm',type=float, default=4)
     parser.add_argument('-ep', help='Epsilon for DP', type=float, default=1.0)
     parser.add_argument('-dp', help='DP on', action='store_true', default=False)
+    parser.add_argument('--model_type', help='model type, nm_cnn or rnn', default='nm_cnn')
+    parser.add_argument('--data_type', help='data type, yelp-author or lfw', default='lfw')
+    
     args = parser.parse_args()
 
     if args.ds == -1:
