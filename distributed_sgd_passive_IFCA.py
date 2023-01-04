@@ -18,8 +18,6 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 
 from collections import OrderedDict
 
-from split_data import prepare_data_biased
-from load_lfw import load_lfw_with_attrs, BINARY_ATTRS, MULTI_ATTRS
 from metrics import AUROC as AUROCMetric
 import wandb
 
@@ -30,6 +28,7 @@ from tensorflow_privacy.privacy.analysis.compute_noise_from_budget_lib import co
 from models import Model, ModelFactory
 from constant import GRAD_SAVE_DIR, MODEL_SAVE_DIR
 from checkpoint import ExperimentCheckpoint
+from data import load_data, load_attr, prepare_data_biased
 
 if not os.path.exists(GRAD_SAVE_DIR):
     os.mkdir(GRAD_SAVE_DIR)
@@ -112,7 +111,8 @@ def gen_batch(x, y, n=1):
 
 def train_lfw(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_clusters=3, num_iteration=3000,
               victim_all_nonprop=False, balance=False, k=5, train_size=0.3, cuda=-1, seed_data=54321, seed_main=12345,args=None):
-    x, y, prop = load_lfw_with_attrs(task, attr)
+    x, y, prop = load_data(args.data_type, task, attr)
+    BINARY_ATTRS, MULTI_ATTRS = load_attr(args.data_type)
     prop_dict = MULTI_ATTRS[attr] if attr in MULTI_ATTRS else BINARY_ATTRS[attr]
 
     logger.info('Training {} and infering {} property {} with {} data'.format(task, attr, prop_dict[prop_id], len(x)))
@@ -121,6 +121,8 @@ def train_lfw(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_
     y = np.asarray(y, dtype=np.int32)
     #prop = np.asarray(prop, dtype=np.int32)  # property label인지 (1) 아닌지 (0)
     prop = np.where(np.asarray(prop, dtype=np.int32) == prop_id, 1, 0)
+
+    print(x.shape, y.shape, prop.shape)
 
     filename = wandb.run.name
 

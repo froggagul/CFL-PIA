@@ -13,7 +13,6 @@ if not os.path.exists(DATA_DIR):
 
 LFW_DIR = DATA_DIR + '/lfw_home/lfw_funneled/'
 
-
 def download_lfw_raw():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -21,7 +20,7 @@ def download_lfw_raw():
 
 
 def save_lfw(slice_=(slice(70, 195), slice(78, 172)), resize=0.5):
-    attr = pd.read_csv('./data/lfw_attributes.txt', delimiter='\t')
+    attr = pd.read_csv(os.path.join(DATA_DIR, 'lfw_attributes.txt'), delimiter='\t')
     names = np.asarray(attr['person'])
     img_num = np.asarray(attr['imagenum'])
 
