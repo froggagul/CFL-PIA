@@ -14,12 +14,40 @@ MULTI_ATTRS = {
 
 BINARY_ATTRS = {}
 
-def text_to_onehot(text: pd.Series):
+def text_to_label(texts: pd.Series):
     from sklearn.feature_extraction.text import CountVectorizer
-    text.to_numpy()
-    vectorizer = CountVectorizer(max_features = 3000)
-    onehot = vectorizer.fit_transform(text.to_numpy())
-    return onehot.toarray()
+
+    vectorizer = CountVectorizer()
+    vectorizer = vectorizer.fit(texts)
+    tokenizer = vectorizer.build_tokenizer()
+
+    n = 3
+    matrix = vectorizer.fit_transform(texts)
+    freqs = zip(vectorizer.get_feature_names(), matrix.toarray().sum(axis=0))  
+    # sort from largest to smallest
+    topk_freqs = sorted(freqs, key=lambda x: -x[1])[:n]
+    # build voacb dict
+    vocab_dict = { word: index + 1 for index, (word, count) in enumerate(topk_freqs) }
+    vocab_dict
+
+    x = []
+    max_len = 0
+
+    for text in texts:
+        ids = []
+        for word in tokenizer(text):
+            if word in vocab_dict:
+                ids.append(vocab_dict[word])
+        ids = np.array(ids, np.int32)
+        max_len = max(len(ids), max_len)
+        x.append(ids)
+
+    for i, ids in enumerate(x):
+        ids = np.concatenate((ids, np.zeros(max_len - len(ids), dtype = np.int32)))
+        x[i] = ids
+
+    x = np.array(x)
+    return x
 
 def dataset_path(main_attr, infer_attr):
     data_name = f"yelp-author_{main_attr}_{infer_attr}.npz"
@@ -28,7 +56,7 @@ def dataset_path(main_attr, infer_attr):
 def load_data(main_attr, infer_attr):
     path = dataset_path(main_attr, infer_attr)
     if os.path.exists(path):
-        file = np.load(path)
+        file = np.load(path, allow_pickle=True)
         return file['x'], file['y'], file['prop']
     else:
         return None, None, None
@@ -55,7 +83,7 @@ def load_yelp_author_with_attrs(main_attr, infer_attr):
     filtered_df = df[df[infer_attr].isin(topn_infer_attrs)]
 
 
-    x = text_to_onehot(filtered_df['text'])
+    x = text_to_label(filtered_df['text'])
     y = filtered_df[main_attr].to_numpy()
     prop = filtered_df[infer_attr].to_numpy()
 
