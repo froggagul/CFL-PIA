@@ -188,8 +188,14 @@ def train_lfw(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_
     #prop = np.asarray(prop, dtype=np.int32)  # property label인지 (1) 아닌지 (0)
     prop = np.where(np.asarray(prop, dtype=np.int32) == prop_id, 1, 0)
 
-    filename = wandb.run.name
+    
+    filename = f"{args.project}/{args.t}_{args.a}_{args.nw}_{wandb.run.name}"
+    if args.dp:
+        filename = f"{args.project}/{args.t}_{args.a}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"
 
+    if not os.path.exists(f"{SAVE_DIR}{args.project}"):
+        os.makedirs(f"{SAVE_DIR}{args.project}")
+    
     # indices = np.arange(len(x))
     # prop_indices = indices[prop == prop_id]
     # nonprop_indices = indices[prop != prop_id]
@@ -743,7 +749,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
                 gradient_getter_with_gen(train_nonprop_gen, train_npg, global_grad_fn, iters=8,
                                          param_names=params_names)'''
 
-        if (it + 1) % 2 == 0 and it > 0:  # validation
+        if (it + 1) % 100 == 0 and it > 0:  # validation
 
             network_global.eval()
             for j in range(n_clusters):
