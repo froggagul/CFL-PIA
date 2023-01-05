@@ -109,7 +109,7 @@ def gen_batch(x, y, n=1):
             yield v[ndx:min(ndx + n, l)], y_slice[ndx:min(ndx + n, l)]
 
 
-def train_lfw(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_clusters=3, num_iteration=3000,
+def train(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_clusters=3, num_iteration=3000,
               victim_all_nonprop=False, balance=False, k=5, train_size=0.3, cuda=-1, seed_data=54321, seed_main=12345,args=None):
     x, y, prop = load_data(args.data_type, task, attr)
     BINARY_ATTRS, MULTI_ATTRS = load_attr(args.data_type)

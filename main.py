@@ -5,8 +5,8 @@ import time
 import argparse
 import os
 
-from distributed_sgd_passive_IFCA import train_lfw
-from inference_attack_IFCA import evaluate_lfw
+from distributed_sgd_passive_IFCA import train
+from inference_attack_IFCA import evaluate
 
 
 
@@ -53,9 +53,9 @@ if __name__ == '__main__':
     wandb.config.update(args)
 
     start_time = time.time()
-    filename = train_lfw(args.t, args.a, args.pi, args.pp, args.nw, args.nc, args.ni, args.van, args.b, args.k, args.ts, args.c,
+    filename = train(args.t, args.a, args.pi, args.pp, args.nw, args.nc, args.ni, args.van, args.b, args.k, args.ts, args.c,
                          seed_data, seed_main,args)
-    evaluate_lfw(filename)
+    evaluate(filename)
  
     duration = (time.time() - start_time)
     print("SGD ended in %0.2f hour (%.3f sec) " % (duration / float(3600), duration))
