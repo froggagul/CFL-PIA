@@ -21,7 +21,7 @@ def text_to_label(texts: pd.Series):
     vectorizer = vectorizer.fit(texts)
     tokenizer = vectorizer.build_tokenizer()
 
-    n = 3
+    n = 3000
     matrix = vectorizer.fit_transform(texts)
     freqs = zip(vectorizer.get_feature_names(), matrix.toarray().sum(axis=0))  
     # sort from largest to smallest
@@ -85,7 +85,12 @@ def load_yelp_author_with_attrs(main_attr, infer_attr):
 
     x = text_to_label(filtered_df['text'])
     y = filtered_df[main_attr].to_numpy()
+    
     prop = filtered_df[infer_attr].to_numpy()
+    if infer_attr == "user_id":
+        prop = filtered_df[infer_attr].astype('category').cat.codes.to_numpy()
+    if main_attr == "stars":
+        y -= 1
 
     save_data(main_attr, infer_attr, x, y, prop)
 
@@ -93,4 +98,4 @@ def load_yelp_author_with_attrs(main_attr, infer_attr):
 
 
 if __name__ == "__main__":
-    load_yelp_author_with_attrs('review', 'stars')
+    load_yelp_author_with_attrs('stars', 'user_id')

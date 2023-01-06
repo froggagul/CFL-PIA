@@ -3,9 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-from torchdp.privacy_engine import PrivacyEngine
 from torchdp.per_sample_gradient_clip import PerSampleGradientClipper
-from tensorflow_privacy.privacy.analysis.compute_noise_from_budget_lib import compute_noise
 
 from models import ModelFactory, Model
 

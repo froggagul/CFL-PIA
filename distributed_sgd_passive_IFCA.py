@@ -663,7 +663,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
                 gradient_getter_with_gen(train_nonprop_gen, train_npg, global_grad_fn, iters=8,
                                          param_names=params_names)'''
 
-        if (it + 1) % 2 == 0 and it > 0:  # validation
+        if (it + 1) % 4 == 0 and it > 0:  # validation
 
             network_global.eval()
             for j in range(n_clusters):
@@ -692,7 +692,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
                     input_tensor = torch.from_numpy(inputs).to(device)
                     pred = network_global(input_tensor).cpu()
                     targets2 = torch.from_numpy(targets).to(dtype=torch.long)
-                    
+
                     fl_auc.update(targets2, pred)
 
                     err = network_global.criterion(pred, targets2)
@@ -714,6 +714,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
                     for j in range(n_clusters):
                         # check ith cluster
                         cluster_network = cluster_networks[j]
+                        
                         pred = cluster_network(input_tensor).cpu()
                         loss = cluster_network.criterion(pred, targets2)
                         loss_list.append(loss.item())
