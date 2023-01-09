@@ -13,14 +13,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 from collections import OrderedDict
 
-from split_data import prepare_data_biased
-from load_lfw import load_lfw_with_attrs, BINARY_ATTRS, MULTI_ATTRS
 from metrics import AUROC as AUROCMetric
 import wandb
 
@@ -28,12 +25,13 @@ from torchdp.privacy_engine import PrivacyEngine
 from torchdp.per_sample_gradient_clip import PerSampleGradientClipper
 from tensorflow_privacy.privacy.analysis.compute_noise_from_budget_lib import compute_noise
 
+from models import Model, ModelFactory
+from constant import GRAD_SAVE_DIR, MODEL_SAVE_DIR
+from checkpoint import ExperimentCheckpoint
+from data import load_data, load_attr, prepare_data_biased
 
-# 저장 디렉토리
-SAVE_DIR = './grads/'
-
-if not os.path.exists(SAVE_DIR):
-    os.mkdir(SAVE_DIR)
+if not os.path.exists(GRAD_SAVE_DIR):
+    os.mkdir(GRAD_SAVE_DIR)
 
 # seed가 항상 동일하게 작용하도록 (재현성)
 torch.backends.cudnn.deterministic = True
@@ -81,75 +79,11 @@ def weights_init(m):  # weight 초기화
         if m.bias is not None:
             nn.init.zeros_(m.bias)
 
-
-def conv_shape(x, k, p=0, s=1,
-               d=1):  # x=dim_input, p=padding, d=dilation, k=kernel_size, s=stride # convolution 차원 계산 함수
-    return int((x + 2 * p - d * (k - 1) - 1) / s + 1)
 def gaussian_noise(data_shape, s, sigma, device=None):
     """
     Gaussian noise
     """
     return torch.normal(0, sigma * s, data_shape).to(device)
-
-
-def calculate_shape(init):  # 최종 output 차원 계산
-    size_1 = conv_shape(init, 3)
-    size_2 = conv_shape(size_1, 2, 0, 2)
-    size_3 = conv_shape(size_2, 3)
-    size_4 = conv_shape(size_3, 2, 0, 2)
-    size_5 = conv_shape(size_4, 3)
-    size_6 = conv_shape(size_5, 2, 0, 2)
-    return size_6
-
-
-class cnn_feat_extractor(nn.Module):  # CNN 모델
-    def __init__(self, input_shape=(3, 50, 50), n=128):
-        super().__init__()
-        self.conv1 = nn.Conv2d(input_shape[0], 32, 3)
-        self.pool1 = nn.MaxPool2d(2)
-        self.conv2 = nn.Conv2d(32, 64, 3)
-        self.pool2 = nn.MaxPool2d(2)
-        self.conv3 = nn.Conv2d(64, n, 3)
-        self.pool3 = nn.MaxPool2d(2)
-
-        size_a = calculate_shape(input_shape[1])
-        size_b = calculate_shape(input_shape[2])
-        self.fc1 = nn.Linear(n * size_a * size_b, 256)
-
-    def forward(self, x):
-        x = self.pool1(F.relu(self.conv1(x)))
-        x = self.pool2(F.relu(self.conv2(x)))
-        x = self.pool3(F.relu(self.conv3(x)))
-        x = torch.flatten(x, 1)  # flatten all dimensions except batch
-        x = F.relu(self.fc1(x))
-        return x
-
-
-class nm_cnn(nn.Module):  # 최종 classifier, optimizer 등
-    def __init__(self, classes=2, input_shape=(3, 50, 50), lr=0.01, n=128,args=None):
-        super().__init__()
-        self.fe = cnn_feat_extractor(input_shape, n)
-        self.fc2 = nn.Linear(256, classes)
-        self.criterion = nm_loss
-        self.optimizer = optim.SGD(self.parameters(), lr)
-        if args.dp:
-            self.clipper = PerSampleGradientClipper(self,args.clip)
-            #self.criterion = nn.CrossEntropyLoss()#(reduction='none')
-            
-
-            
-    def forward(self, x):
-        x = self.fe(x)
-        x = nn.functional.softmax(self.fc2(x), dim=1)
-
-        return x
-
-
-def nm_loss(pred, label):  # loss 정의
-    loss = F.cross_entropy(pred, label)
-
-    return torch.mean(loss)
-
 
 def iterate_minibatches(inputs, targets, batchsize, shuffle=False, targets_B=None):  # batch를 가져옴
     assert len(inputs) == len(targets)
@@ -167,7 +101,6 @@ def iterate_minibatches(inputs, targets, batchsize, shuffle=False, targets_B=Non
         else:
             yield inputs[excerpt], targets[excerpt], targets_B[excerpt]
 
-
 def gen_batch(x, y, n=1):
     for i, v in enumerate(x):
         y_slice = y[i][:, 0]
@@ -176,9 +109,10 @@ def gen_batch(x, y, n=1):
             yield v[ndx:min(ndx + n, l)], y_slice[ndx:min(ndx + n, l)]
 
 
-def train_lfw(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_clusters=3, num_iteration=3000,
+def train(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_clusters=3, num_iteration=3000,
               victim_all_nonprop=False, balance=False, k=5, train_size=0.3, cuda=-1, seed_data=54321, seed_main=12345,args=None):
-    x, y, prop = load_lfw_with_attrs(task, attr)
+    x, y, prop = load_data(args.data_type, task, attr)
+    BINARY_ATTRS, MULTI_ATTRS = load_attr(args.data_type)
     prop_dict = MULTI_ATTRS[attr] if attr in MULTI_ATTRS else BINARY_ATTRS[attr]
 
     logger.info('Training {} and infering {} property {} with {} data'.format(task, attr, prop_dict[prop_id], len(x)))
@@ -188,7 +122,14 @@ def train_lfw(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_
     #prop = np.asarray(prop, dtype=np.int32)  # property label인지 (1) 아닌지 (0)
     prop = np.where(np.asarray(prop, dtype=np.int32) == prop_id, 1, 0)
 
+
     filename = wandb.run.name
+
+    print(x.shape, y.shape, prop.shape)
+    filename = f"{args.project}/{args.t}_{args.a}_{args.nw}_{wandb.run.name}"
+    if args.dp:
+        filename = f"{args.project}/{args.t}_{args.a}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"
+
 
     # indices = np.arange(len(x))
     # prop_indices = indices[prop == prop_id]
@@ -220,13 +161,23 @@ def train_lfw(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_
         )
     return filename
 
-def build_worker(input_shape, classes=2, lr=None, device='cpu',args=None):  # worker 1개 생성하고 초기화
+def build_worker(model_type, input_shape, classes=2, lr=None, device='cpu', args=None):  # worker 1개 생성하고 초기화
+    kwargs = {
+            "classes": classes,
+            "input_shape": input_shape,
+            "lr": lr,
+            "args": args
+        }
 
-    normal_network = nm_cnn(classes, input_shape, lr,args=args).to(device)
-    normal_network.apply(weights_init)
-    normal_network.train()
+    worker: Model = ModelFactory.create(
+        model_type,
+        **kwargs
+    )
+    worker = worker.to(device)
+    worker.apply(weights_init)
+    worker.train()
 
-    return normal_network
+    return worker
 
 
 def inf_data(x, y, batchsize, shuffle=False, y_b=None):  # random batch 무한히 가져오기
@@ -417,22 +368,12 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
     else:
         device = torch.device('cpu')
 
-    file_name = "data/temp_dataset_n" + str(n_workers)  # worker 수에 따라 dataset 생성
-
-    '''if os.path.exists(file_name):
-        with open(file_name, 'rb') as f:
-            splitted_X, splitted_y, X_test, y_test, splitted_X_test, splitted_y_test = pickle.load(f)
-            logger.info("Temp dataset loaded!")'''
-    #else:
     splitted_X, splitted_y, X_test, y_test, splitted_X_test, splitted_y_test = prepare_data_biased(data, train_size,
                                                                                                        n_workers,
                                                                                                        seed=seed_data,
                                                                                                        # non-iid dataset 생성 --> worker별로 데이터셋이 할당됨
                                                                                                        victim_all_nonprop=victim_all_nonprop,
                                                                                                        p_prop=p_prop)
-    '''with open(file_name, 'wb') as f:
-        pickle.dump((splitted_X, splitted_y, X_test, y_test, splitted_X_test, splitted_y_test), f)
-        logger.info("Temp dataset dumped!")'''
 
     torch.manual_seed(seed_main)
     torch.cuda.manual_seed(seed_main)
@@ -447,27 +388,17 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
     # build test network
     args_dp = copy.deepcopy(args)
     args_dp.dp = False
-    network_global = nm_cnn(classes=classes, input_shape=input_shape,args=args_dp).to(device)  # global model
-    network_global.apply(weights_init)
-    network_global.train()
+    model_type = args.model_type
 
-    global_params = OrderedDict()
-    for name, param in network_global.named_parameters():
-        if param.requires_grad:
-            global_params[name] = param
+    network_global = build_worker(model_type, classes=classes, input_shape=input_shape, args=args_dp, device=device, lr=lr)  # global model
+    global_params = network_global.get_params()
 
     # build clusters
     cluster_networks = []
     cluster_params = []
     for i in range(n_clusters):
-        network = nm_cnn(classes=classes, input_shape=input_shape,args=args_dp).to(device)
-        network.apply(weights_init)
-        network.train()
-
-        params = OrderedDict()
-        for name, param in network.named_parameters():
-            if param.requires_grad:
-                params[name] = param
+        network = build_worker(model_type, classes=classes, input_shape=input_shape, args=args_dp, device=device, lr=lr)
+        params = network.get_params()
 
         cluster_networks.append(network)
         cluster_params.append(params)
@@ -506,20 +437,14 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
 
             logger.info('Participant {} with {} data'.format(i, len(splitted_X[i])))
 
-        network = build_worker(input_shape, classes=classes, lr=lr, device=device,args=args)  # worker들 생성
+        network = build_worker(model_type, input_shape, classes=classes, lr=lr, device=device,args=args)  # worker들 생성
         worker_networks.append(network)
-        params = OrderedDict()
-        for name, param in network.named_parameters():
-            if param.requires_grad:
-                params[name] = param
+        params = network.get_params()
         worker_params.append(params)
 
-        network_IFCA = build_worker(input_shape, classes=classes, lr=lr, device=device,args=args)  # CFL용 worker들 생성
+        network_IFCA = build_worker(model_type, input_shape, classes=classes, lr=lr, device=device,args=args)  # CFL용 worker들 생성
         worker_networks_IFCA.append(network_IFCA)
-        params = OrderedDict()
-        for name, param in network_IFCA.named_parameters():
-            if param.requires_grad:
-                params[name] = param
+        params = network_IFCA.get_params()
         worker_params_IFCA.append(params)
 
     # container for gradients
@@ -772,7 +697,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
                     input_tensor = torch.from_numpy(inputs).to(device)
                     pred = network_global(input_tensor).cpu()
                     targets2 = torch.from_numpy(targets).to(dtype=torch.long)
-                    
+
                     fl_auc.update(targets2, pred)
 
                     err = network_global.criterion(pred, targets2)
@@ -794,6 +719,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
                     for j in range(n_clusters):
                         # check ith cluster
                         cluster_network = cluster_networks[j]
+                        
                         pred = cluster_network(input_tensor).cpu()
                         loss = cluster_network.criterion(pred, targets2)
                         loss_list.append(loss.item())
@@ -842,49 +768,61 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
 
             start_time = time.time()
 
-    np.savez(SAVE_DIR + "{}.npz".format(filename),
+    checkpoint = ExperimentCheckpoint(
+        network_global,
+        cluster_networks,
+        worker_networks,
+        worker_networks_IFCA,
+        args
+        )
+    checkpoint.save(os.path.join(MODEL_SAVE_DIR, args.project, filename))
+
+    np.savez(GRAD_SAVE_DIR + "{}.npz".format(filename),
              train_pg=train_pg, train_npg=train_npg, test_pg=test_pg, test_npg=test_npg,
              train_cluster_nv_pg=train_cluster_nv_pg, train_cluster_nv_npg=train_cluster_nv_npg,
              test_cluster_nv_pg=test_cluster_nv_pg, test_cluster_nv_npg=test_cluster_nv_npg)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Distributed SGD')
-    parser.add_argument('-t', help='Main task', default='gender')
-    parser.add_argument('-a', help='Target attribute', default='race')
-    parser.add_argument('--pi', help='Property id', type=int, default=2)  # black (2)
-    parser.add_argument('--pp', help='Property probability', type=float, default=0.5)
-    parser.add_argument('-nw', help='# of workers', type=int, default=30)
-    parser.add_argument('-nc', help='# of clusters', type=int, default=3)
-    parser.add_argument('-ni', help='# of iterations', type=int, default=5000)
-    parser.add_argument('--van', help='victim_all_nonproperty', action='store_true')
-    parser.add_argument('--b', help='balance', action='store_true')
-    parser.add_argument('-k', help='k', type=int, default=5)
-    parser.add_argument('-ds', help='data seed (-1 for time-dependent seed)', type=int, default=54321)
-    parser.add_argument('-ms', help='main seed (-1 for time-dependent seed)', type=int, default=12345)
-    parser.add_argument('-clip', help='clipping norm',type=float, default=4)
-    parser.add_argument('-ep', help='Epsilon for DP', type=float, default=1.0)
-    parser.add_argument('-dp', help='DP on', action='store_true', default=False)
-    parser.add_argument('--ts', help='Train size', type=float, default=0.3)
-    parser.add_argument('-c', help='CUDA num (-1 for CPU-only)', default='-1')
-    parser.add_argument('-clip', help='clipping norm',type=float, default=4)
-    parser.add_argument('-ep', help='Epsilon for DP', type=float, default=1.0)
-    parser.add_argument('-dp', help='DP on', action='store_true', default=False)
+    """
+    below script is deprecated, see main.py
+    """
+    # parser = argparse.ArgumentParser(description='Distributed SGD')
+    # parser.add_argument('-t', help='Main task', default='gender')
+    # parser.add_argument('-a', help='Target attribute', default='race')
+    # parser.add_argument('--pi', help='Property id', type=int, default=2)  # black (2)
+    # parser.add_argument('--pp', help='Property probability', type=float, default=0.5)
+    # parser.add_argument('-nw', help='# of workers', type=int, default=30)
+    # parser.add_argument('-nc', help='# of clusters', type=int, default=3)
+    # parser.add_argument('-ni', help='# of iterations', type=int, default=5000)
+    # parser.add_argument('--van', help='victim_all_nonproperty', action='store_true')
+    # parser.add_argument('--b', help='balance', action='store_true')
+    # parser.add_argument('-k', help='k', type=int, default=5)
+    # parser.add_argument('-ds', help='data seed (-1 for time-dependent seed)', type=int, default=54321)
+    # parser.add_argument('-ms', help='main seed (-1 for time-dependent seed)', type=int, default=12345)
+    # parser.add_argument('-clip', help='clipping norm',type=float, default=4)
+    # parser.add_argument('-ep', help='Epsilon for DP', type=float, default=1.0)
+    # parser.add_argument('-dp', help='DP on', action='store_true', default=False)
+    # parser.add_argument('--ts', help='Train size', type=float, default=0.3)
+    # parser.add_argument('-c', help='CUDA num (-1 for CPU-only)', default='-1')
+    # parser.add_argument('-clip', help='clipping norm',type=float, default=4)
+    # parser.add_argument('-ep', help='Epsilon for DP', type=float, default=1.0)
+    # parser.add_argument('-dp', help='DP on', action='store_true', default=False)
     
-    args = parser.parse_args()
+    # args = parser.parse_args()
 
-    if args.ds == -1: # seed for dataset generation
-        seed_data = time.time()
-    else:
-        seed_data = args.ds
+    # if args.ds == -1: # seed for dataset generation
+    #     seed_data = time.time()
+    # else:
+    #     seed_data = args.ds
 
-    if args.ms == -1: # seed for other random variables
-        seed_main = time.time() + 1
-    else:
-        seed_main = args.ms
+    # if args.ms == -1: # seed for other random variables
+    #     seed_main = time.time() + 1
+    # else:
+    #     seed_main = args.ms
 
-    start_time = time.time()
-    train_lfw(args.t, args.a, args.pi, args.pp, args.nw, args.nc, args.ni, args.van, args.b, args.k, args.ts, args.c,
-              seed_data, seed_main,args)
-    duration = (time.time() - start_time)
-    logger.info("SGD ended in %0.2f hour (%.3f sec) " % (duration / float(3600), duration))
+    # start_time = time.time()
+    # train_lfw(args.t, args.a, args.pi, args.pp, args.nw, args.nc, args.ni, args.van, args.b, args.k, args.ts, args.c,
+    #           seed_data, seed_main,args)
+    # duration = (time.time() - start_time)
+    # logger.info("SGD ended in %0.2f hour (%.3f sec) " % (duration / float(3600), duration))

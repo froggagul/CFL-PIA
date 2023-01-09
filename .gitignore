@@ -1,6 +1,7 @@
-data/
+_data/
 log_*/
 grads/
 wandb/
 __pycache__/
-
+\#*#
+checkpoints/

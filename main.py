@@ -5,8 +5,8 @@ import time
 import argparse
 import os
 
-from distributed_sgd_passive_IFCA import train_lfw
-from inference_attack_IFCA import evaluate_lfw
+from distributed_sgd_passive_IFCA import train
+from inference_attack_IFCA import evaluate
 
 
 
@@ -31,6 +31,9 @@ if __name__ == '__main__':
     parser.add_argument('-clip', help='clipping norm',type=float, default=4)
     parser.add_argument('-ep', help='Epsilon for DP', type=float, default=1.0)
     parser.add_argument('-dp', help='DP on', action='store_true', default=False)
+    parser.add_argument('--model_type', help='model type, nm_cnn or rnn', default='nm_cnn')
+    parser.add_argument('--data_type', help='data type, yelp-author or lfw', default='lfw')
+    
     args = parser.parse_args()
 
     if args.ds == -1:
@@ -50,9 +53,9 @@ if __name__ == '__main__':
     wandb.config.update(args)
 
     start_time = time.time()
-    filename = train_lfw(args.t, args.a, args.pi, args.pp, args.nw, args.nc, args.ni, args.van, args.b, args.k, args.ts, args.c,
+    filename = train(args.t, args.a, args.pi, args.pp, args.nw, args.nc, args.ni, args.van, args.b, args.k, args.ts, args.c,
                          seed_data, seed_main,args)
-    evaluate_lfw(filename)
+    evaluate(filename)
  
     duration = (time.time() - start_time)
     print("SGD ended in %0.2f hour (%.3f sec) " % (duration / float(3600), duration))
