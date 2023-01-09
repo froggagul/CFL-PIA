@@ -6,13 +6,12 @@ import pandas as pd
 from PIL import Image
 from imageio import imread
 from sklearn.datasets import fetch_lfw_people
+from constant import DATA_DIR
 
-DATA_DIR = './data/'
 if not os.path.exists(DATA_DIR):
     os.mkdir(DATA_DIR)
 
 LFW_DIR = DATA_DIR + '/lfw_home/lfw_funneled/'
-
 
 def download_lfw_raw():
     with warnings.catch_warnings():
@@ -21,7 +20,7 @@ def download_lfw_raw():
 
 
 def save_lfw(slice_=(slice(70, 195), slice(78, 172)), resize=0.5):
-    attr = pd.read_csv('./data/lfw_attributes.txt', delimiter='\t')
+    attr = pd.read_csv(os.path.join(DATA_DIR, 'lfw_attributes.txt'), delimiter='\t')
     names = np.asarray(attr['person'])
     img_num = np.asarray(attr['imagenum'])
 

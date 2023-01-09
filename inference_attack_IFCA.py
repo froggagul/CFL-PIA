@@ -264,7 +264,7 @@ def inference_attack_cluster(train_pg, train_npg, test_pg, test_npg, norm=True, 
         f"attack/test/auc/ifca/{log_prefix}_seperate_rf": roc_auc_score(y_true=y_test_all, y_score=y_score_all),
     })
 
-def evaluate_lfw(filename):
+def evaluate(filename):
     with np.load(SAVE_DIR + '{}.npz'.format(filename), allow_pickle=True) as f:
         train_pg, train_npg, test_pg, test_npg,\
         train_cluster_nv_pg, train_cluster_nv_npg, test_cluster_nv_pg, test_cluster_nv_npg\
