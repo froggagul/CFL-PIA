@@ -55,7 +55,7 @@ class NMCNN(Model):  # 최종 classifier, optimizer 등
         self.fc2 = nn.Linear(256, classes)
         self.criterion = nm_loss
         self.optimizer = optim.SGD(self.parameters(), lr)
-        if args.dp:
+        if args.ldp:
             self.clipper = PerSampleGradientClipper(self,args.clip)
             #self.criterion = nn.CrossEntropyLoss()#(reduction='none')
             
