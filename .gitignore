@@ -9,3 +9,5 @@ __pycache__/
 *.jpg
 *.npz
 checkpoints/
+checkpoint/
+
