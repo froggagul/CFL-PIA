@@ -30,7 +30,8 @@ if __name__ == '__main__':
     parser.add_argument('-c', help='CUDA num (-1 for CPU-only)', default=-1)
     parser.add_argument('-clip', help='clipping norm',type=float, default=4)
     parser.add_argument('-ep', help='Epsilon for DP', type=float, default=1.0)
-    parser.add_argument('-dp', help='DP on', action='store_true', default=False)
+    parser.add_argument('-ldp', help='LDP on', action='store_true', default=False)
+    parser.add_argument('-cdp', help='CDP on', action='store_true', default=False)
     parser.add_argument('--model_type', help='model type, nm_cnn or rnn', default='nm_cnn')
     parser.add_argument('--data_type', help='data type, yelp-author or lfw', default='lfw')
     
@@ -49,7 +50,7 @@ if __name__ == '__main__':
     args.ms = seed_main
     args.ds = seed_data
 
-    wandb.init(project=args.project, entity='froggagul')
+    wandb.init(project=args.project, entity='sor')
     wandb.config.update(args)
 
     start_time = time.time()

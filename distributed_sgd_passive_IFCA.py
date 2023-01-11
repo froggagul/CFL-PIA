@@ -127,8 +127,10 @@ def train(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_clus
 
     print(x.shape, y.shape, prop.shape)
     filename = f"{args.project}/{args.t}_{args.a}_{args.nw}_{wandb.run.name}"
-    if args.dp:
-        filename = f"{args.project}/{args.t}_{args.a}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"
+    if args.ldp:
+        filename = f"{args.project}/ldp_{args.t}_{args.a}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"
+    elif args.cdp:
+        filename = f"{args.project}/cdp_{args.t}_{args.a}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"        
 
 
     # indices = np.arange(len(x))
@@ -446,7 +448,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
         worker_networks_IFCA.append(network_IFCA)
         params = network_IFCA.get_params()
         worker_params_IFCA.append(params)
-
+    print("###########################!!!!!!!!!!!!########")
     # container for gradients
     train_pg, train_npg = [], []
     test_pg, test_npg = [], []
@@ -532,14 +534,15 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
 
             grads_dict = OrderedDict()
 
-            if args.dp:
+            if args.ldp:
                 network.clipper.step()
                 for param in params.keys():
 
                     params[param].grad += gaussian_noise(params[param].shape, args.clip/32, args.ep, device=device)
                     grads_dict[param] = copy.deepcopy(params[param].grad)              
             else:
-                
+                if args.cdp:
+                    torch.nn.utils.clip_grad_norm_(network.parameters(), args.clip)    
                 for param in params.keys():
                     grads_dict[param] = copy.deepcopy(params[param].grad)
 
@@ -571,16 +574,17 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
                 loss_list.append(loss.item())
 
                 grads_dict = OrderedDict()
-                if args.dp:
+                if args.ldp:
                     network_IFCA.clipper.step()
                     for param in params.keys():
 
                         params_IFCA[param].grad += gaussian_noise(params_IFCA[param].shape, args.clip/32, args.ep, device=device)
 
                         grads_dict[param] = copy.deepcopy(params_IFCA[param].grad)
-
-                    pass
                 else:
+                    if args.cdp:
+                        torch.nn.utils.clip_grad_norm_(network_IFCA.parameters(), args.clip)
+                        
                     for param in params_IFCA.keys():
                         grads_dict[param] = copy.deepcopy(params_IFCA[param].grad)
         
@@ -606,6 +610,18 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
         for i in range(n_workers):  # update clustered global models
             w_index = cluster_global_index[i]
             update_global(cluster_params[w_index], cluster_global_grads[i], lr * 32, cluster_global_isize[i])
+
+
+        if args.cdp:
+            for global_param in global_params.keys():
+                global_params[global_param].data.add_(gaussian_noise(global_params[global_param].data.shape, args.clip/args.nw, args.ep, device=device))
+                
+            for i in range(n_clusters):
+                for cluster_param in cluster_params[i].keys():
+                    cluster_params[i][cluster_param].data.add_(gaussian_noise(cluster_params[i][cluster_param].shape, args.clip/args.nw, args.ep, device=device))
+                                            
+                
+            
         result_count = [0]
         print_index(cluster_global_index, result_count)
 
@@ -668,7 +684,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
                 gradient_getter_with_gen(train_nonprop_gen, train_npg, global_grad_fn, iters=8,
                                          param_names=params_names)'''
 
-        if (it + 1) % 2 == 0 and it > 0:  # validation
+        if (it + 1) % 10 == 0 and it > 0:  # validation
 
             network_global.eval()
             for j in range(n_clusters):

@@ -1,7 +1,11 @@
 _data/
+data/lfw_home
 log_*/
 grads/
 wandb/
 __pycache__/
 \#*#
+*.txt
+*.jpg
+*.npz
 checkpoints/
