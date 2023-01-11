@@ -152,6 +152,7 @@ def train(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_clus
             filename=filename,
             n_workers=n_workers,
             n_clusters=n_clusters,
+            lr = args.lr,
             k=k,
             num_iteration=num_iteration,
             victim_all_nonprop=victim_all_nonprop,
@@ -626,7 +627,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
         print_index(cluster_global_index, result_count)
 
         warm_up_iters = 100
-        if it >= warm_up_iters:
+        if it >= warm_up_iters and not args.mia:
             
             test_gs = aggregate_dicts(aggr_grad)
             if it % k == 0:  # victim이 property를 가질 때 / 안 가질때 aggregated gradient를 수집
