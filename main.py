@@ -19,6 +19,7 @@ if __name__ == '__main__':
     parser.add_argument('--pi', help='Property id', type=int, default=2)  # black (2)
     parser.add_argument('--pp', help='Property probability', type=float, default=0.5)
     parser.add_argument('-lr', help='Property probability', type=float, default=0.01)
+    parser.add_argument('-bs', help='batch size', type=int, default=32)
     parser.add_argument('-nw', help='# of workers', type=int, default=30)
     parser.add_argument('-nc', help='# of clusters', type=int, default=3)
     parser.add_argument('-ni', help='# of iterations', type=int, default=6000)
@@ -34,7 +35,7 @@ if __name__ == '__main__':
     parser.add_argument('-mia', help='mia on', action='store_true', default=False)
     parser.add_argument('-ldp', help='LDP on', action='store_true', default=False)
     parser.add_argument('-cdp', help='CDP on', action='store_true', default=False)
-    parser.add_argument('--model_type', help='model type, nm_cnn or rnn', default='nm_cnn')
+    parser.add_argument('--model_type', help='model type : nm_cnn, rnn, alexnet', default='nm_cnn')
     parser.add_argument('--data_type', help='data type, yelp-author or lfw', default='lfw')
     
     args = parser.parse_args()
@@ -58,7 +59,8 @@ if __name__ == '__main__':
     start_time = time.time()
     filename = train(args.t, args.a, args.pi, args.pp, args.nw, args.nc, args.ni, args.van, args.b, args.k, args.ts, args.c,
                          seed_data, seed_main,args)
-    evaluate(filename)
+    if not args.mia:
+        evaluate(filename)
  
     duration = (time.time() - start_time)
     print("SGD ended in %0.2f hour (%.3f sec) " % (duration / float(3600), duration))

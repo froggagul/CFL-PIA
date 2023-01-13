@@ -4,8 +4,10 @@ log_*/
 grads/
 wandb/
 __pycache__/
-\#*#
+\#*\#
 *.txt
 *.jpg
 *.npz
+*.pt
 checkpoints/
+*~

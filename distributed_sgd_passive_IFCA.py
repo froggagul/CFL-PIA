@@ -28,7 +28,7 @@ from tensorflow_privacy.privacy.analysis.compute_noise_from_budget_lib import co
 from models import Model, ModelFactory
 from constant import GRAD_SAVE_DIR, MODEL_SAVE_DIR
 from checkpoint import ExperimentCheckpoint
-from data import load_data, load_attr, prepare_data_biased
+from data import load_data, load_attr, prepare_data_biased,prepare_mia_data_biased
 
 if not os.path.exists(GRAD_SAVE_DIR):
     os.mkdir(GRAD_SAVE_DIR)
@@ -101,9 +101,12 @@ def iterate_minibatches(inputs, targets, batchsize, shuffle=False, targets_B=Non
         else:
             yield inputs[excerpt], targets[excerpt], targets_B[excerpt]
 
-def gen_batch(x, y, n=1):
+def gen_batch(x, y, args,n=1):
     for i, v in enumerate(x):
-        y_slice = y[i][:, 0]
+        if args.mia:
+            y_slice = y[i]
+        else:
+            y_slice = y[i][:, 0]
         l = len(v)
         for ndx in range(0, l, n):
             yield v[ndx:min(ndx + n, l)], y_slice[ndx:min(ndx + n, l)]
@@ -111,11 +114,13 @@ def gen_batch(x, y, n=1):
 
 def train(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_clusters=3, num_iteration=3000,
               victim_all_nonprop=False, balance=False, k=5, train_size=0.3, cuda=-1, seed_data=54321, seed_main=12345,args=None):
+    
     x, y, prop = load_data(args.data_type, task, attr)
-    BINARY_ATTRS, MULTI_ATTRS = load_attr(args.data_type)
-    prop_dict = MULTI_ATTRS[attr] if attr in MULTI_ATTRS else BINARY_ATTRS[attr]
+    if not args.mia:
+        BINARY_ATTRS, MULTI_ATTRS = load_attr(args.data_type)
+        prop_dict = MULTI_ATTRS[attr] if attr in MULTI_ATTRS else BINARY_ATTRS[attr]
 
-    logger.info('Training {} and infering {} property {} with {} data'.format(task, attr, prop_dict[prop_id], len(x)))
+        logger.info('Training {} and infering {} property {} with {} data'.format(task, attr, prop_dict[prop_id], len(x)))
 
     x = np.asarray(x, dtype=np.float32)
     y = np.asarray(y, dtype=np.int32)
@@ -126,11 +131,14 @@ def train(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_clus
     filename = wandb.run.name
 
     print(x.shape, y.shape, prop.shape)
-    filename = f"{args.project}/{args.t}_{args.a}_{args.nw}_{wandb.run.name}"
-    if args.ldp:
-        filename = f"{args.project}/ldp_{args.t}_{args.a}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"
-    elif args.cdp:
-        filename = f"{args.project}/cdp_{args.t}_{args.a}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"        
+    if not args.mia:
+        filename = f"{args.project}/{args.t}_{args.a}_{args.nw}_{wandb.run.name}"
+        if args.ldp:
+            filename = f"{args.project}/ldp_{args.t}_{args.a}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"
+        elif args.cdp:
+            filename = f"{args.project}/cdp_{args.t}_{args.a}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"
+    else:
+        filname =  f"{args.project}/mia_{args.data_type}_{args.nw}_{args.nc}_{wandb.run.name}"
 
 
     # indices = np.arange(len(x))
@@ -145,7 +153,26 @@ def train(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_clus
     # if n_workers > 2:
     #     filename += '_n{}'.format(n_workers)
 
-    train_multi_task_ps(
+    if args.mia:
+        train_multi_task_ps(
+            (x, y),
+            input_shape=(3, 62, 47),
+            p_prop=p_prop,  # balance=balance,
+            filename=filename,
+            n_workers=n_workers,
+            n_clusters=n_clusters,
+            lr = args.lr,
+            k=k,
+            num_iteration=num_iteration,
+            victim_all_nonprop=victim_all_nonprop,
+            train_size=train_size,
+            cuda=cuda,
+            seed_data=seed_data,
+            seed_main=seed_main,
+            args= args
+        )
+    else:
+        train_multi_task_ps(
             (x, y, prop),
             input_shape=(3, 62, 47),
             p_prop=p_prop,  # balance=balance,
@@ -371,12 +398,20 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
     else:
         device = torch.device('cpu')
 
-    splitted_X, splitted_y, X_test, y_test, splitted_X_test, splitted_y_test = prepare_data_biased(data, train_size,
+    if args.mia:
+        splitted_X, splitted_y, X_test, y_test, splitted_X_test, splitted_y_test = prepare_mia_data_biased(data, train_size,
                                                                                                        n_workers,
                                                                                                        seed=seed_data,
                                                                                                        # non-iid dataset 생성 --> worker별로 데이터셋이 할당됨
                                                                                                        victim_all_nonprop=victim_all_nonprop,
-                                                                                                       p_prop=p_prop)
+                                                                                                       p_prop=p_prop,args=args)
+    else:
+        splitted_X, splitted_y, X_test, y_test, splitted_X_test, splitted_y_test = prepare_data_biased(data, train_size,
+                                                                                                       n_workers,
+                                                                                                       seed=seed_data,
+                                                                                                       # non-iid dataset 생성 --> worker별로 데이터셋이 할당됨
+                                                                                                       victim_all_nonprop=victim_all_nonprop,
+                                                                                                       p_prop=p_prop,args=args)
 
     torch.manual_seed(seed_main)
     torch.cuda.manual_seed(seed_main)
@@ -384,8 +419,11 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
     np.random.seed(seed_main)
     random.seed(seed_main)
 
-    p_test = y_test[:, 1]
-    y_test = y_test[:, 0]
+    if args.mia:
+        y_test = y_test
+    else:
+        p_test = y_test[:, 1]
+        y_test = y_test[:, 0]
 
     classes = len(np.unique(y_test))
     # build test network
@@ -416,26 +454,30 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
 
     for i in range(n_workers):  # worker 생성
         # generator 생성
-        if i == attacker_id:  # attacker
+        if i == attacker_id and not args.mia:  # attacker
             split_y = splitted_y[i]
 
-            data_gen = inf_data(splitted_X[i], split_y[:, 0], y_b=split_y[:, 1], batchsize=32, shuffle=True)
+            data_gen = inf_data(splitted_X[i], split_y[:, 0], y_b=split_y[:, 1], batchsize=args.bs, shuffle=True)
             data_gens.append(data_gen)
 
             logger.info('Participant {} with {} data'.format(i, len(splitted_X[i])))
-        elif i == victim_id:  # victim
+        elif i == victim_id and not args.mia:  # victim
             vic_X = np.vstack([splitted_X[i][0], splitted_X[i][1]])
             vic_y = np.concatenate([splitted_y[i][0][:, 0], splitted_y[i][1][:, 0]])
             vic_p = np.concatenate([splitted_y[i][0][:, 1], splitted_y[i][1][:, 1]])
 
-            data_gen = inf_data(vic_X, vic_y, y_b=vic_p, batchsize=32, shuffle=True)
-            data_gen_p = inf_data(splitted_X[i][0], splitted_y[i][0][:, 0], batchsize=32, shuffle=True)
-            data_gen_np = inf_data(splitted_X[i][1], splitted_y[i][1][:, 0], batchsize=32, shuffle=True)
+            data_gen = inf_data(vic_X, vic_y, y_b=vic_p, batchsize=args.bs, shuffle=True)
+            data_gen_p = inf_data(splitted_X[i][0], splitted_y[i][0][:, 0], batchsize=args.bs, shuffle=True)
+            data_gen_np = inf_data(splitted_X[i][1], splitted_y[i][1][:, 0], batchsize=args.bs, shuffle=True)
 
             data_gens.append(data_gen)
             logger.info('Participant {} with {} data'.format(i, len(splitted_X[i][0]) + len(splitted_X[i][1])))
         else:
-            data_gen = inf_data(splitted_X[i], splitted_y[i][:, 0], batchsize=32, shuffle=True)
+
+            if args.mia:
+                data_gen = inf_data(splitted_X[i], splitted_y[i], batchsize=args.bs, shuffle=True)
+            else:
+                data_gen = inf_data(splitted_X[i], splitted_y[i][:, 0], batchsize=args.bs, shuffle=True)
             data_gens.append(data_gen)
 
             logger.info('Participant {} with {} data'.format(i, len(splitted_X[i])))
@@ -449,7 +491,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
         worker_networks_IFCA.append(network_IFCA)
         params = network_IFCA.get_params()
         worker_params_IFCA.append(params)
-    print("###########################!!!!!!!!!!!!########")
+
     # container for gradients
     train_pg, train_npg = [], []
     test_pg, test_npg = [], []
@@ -461,40 +503,43 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
         test_cluster_nv_pg.append([])
         test_cluster_nv_npg.append([])
 
-    X, y, _ = data
+    if args.mia:
+        X, y = data
+    else:
+        X, y, _ = data
 
-    # attacker's aux data
-    X_adv, y_adv = splitted_X[attacker_id], splitted_y[attacker_id]
-    p_adv = y_adv[:, 1]
-    y_adv = y_adv[:, 0]
 
-    indices = np.arange(len(X_adv))
-    prop_indices = indices[p_adv == 1]
-    nonprop_indices = indices[p_adv == 0]
-    adv_gen = mix_inf_data(X_adv[prop_indices], splitted_y[attacker_id][prop_indices],
-                           X_adv[nonprop_indices], splitted_y[attacker_id][nonprop_indices], batchsize=32,
-                           mix_p=0.2)  # 공격자용 data generator
+    if not args.mia:
+        # attacker's aux data
+        X_adv, y_adv = splitted_X[attacker_id], splitted_y[attacker_id]
+        p_adv = y_adv[:, 1]
+        y_adv = y_adv[:, 0]
 
-    X_adv = np.vstack([X_adv, X_test])
-    y_adv = np.concatenate([y_adv, y_test])
-    p_adv = np.concatenate([p_adv, p_test])
+        indices = np.arange(len(X_adv))
+        prop_indices = indices[p_adv == 1]
+        nonprop_indices = indices[p_adv == 0]
+        adv_gen = mix_inf_data(X_adv[prop_indices], splitted_y[attacker_id][prop_indices],                            X_adv[nonprop_indices], splitted_y[attacker_id][nonprop_indices], batchsize=args.bs,                            mix_p=0.2)  # 공격자용 data generator
 
-    indices = np.arange(len(p_adv))
-    train_prop_indices = indices[p_adv == 1]
-    train_prop_gen = inf_data(X_adv[train_prop_indices], y_adv[train_prop_indices], 32, shuffle=True)
+        X_adv = np.vstack([X_adv, X_test])
+        y_adv = np.concatenate([y_adv, y_test])
+        p_adv = np.concatenate([p_adv, p_test])
 
-    indices = np.arange(len(p_test))
-    nonprop_indices = indices[p_test == 0]
-    n_nonprop = len(nonprop_indices)
+        indices = np.arange(len(p_adv))
+        train_prop_indices = indices[p_adv == 1]
+        train_prop_gen = inf_data(X_adv[train_prop_indices], y_adv[train_prop_indices], args.bs, shuffle=True)
 
-    logger.info('Attacker prop data {}, non prop data {}'.format(len(train_prop_indices), n_nonprop))
-    train_nonprop_gen = inf_data(X_test[nonprop_indices], y_test[nonprop_indices], 32, shuffle=True)
+        indices = np.arange(len(p_test))
+        nonprop_indices = indices[p_test == 0]
+        n_nonprop = len(nonprop_indices)
 
-    train_mix_gens = []  # 학습용 aggregated gradient를 생성할때 다양한 property distribution을 가진 상황을 가정하여 만든 data generator
-    for train_mix_p in [0.4, 0.6, 0.8]:
-        train_mix_gen = mix_inf_data(X_adv[train_prop_indices], y_adv[train_prop_indices],
-                                     X_test[nonprop_indices], y_test[nonprop_indices], batchsize=32, mix_p=train_mix_p)
-        train_mix_gens.append(train_mix_gen)
+        logger.info('Attacker prop data {}, non prop data {}'.format(len(train_prop_indices), n_nonprop))
+        train_nonprop_gen = inf_data(X_test[nonprop_indices], y_test[nonprop_indices], args.bs, shuffle=True)
+
+        train_mix_gens = []  # 학습용 aggregated gradient를 생성할때 다양한 property distribution을 가진 상황을 가정하여 만든 data generator
+        for train_mix_p in [0.4, 0.6, 0.8]:
+            train_mix_gen = mix_inf_data(X_adv[train_prop_indices], y_adv[train_prop_indices],
+                                     X_test[nonprop_indices], y_test[nonprop_indices], batchsize=args.bs, mix_p=train_mix_p)
+            train_mix_gens.append(train_mix_gen)
 
     start_time = time.time()
     for it in range(num_iteration):  # stages 시작
@@ -515,11 +560,11 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
             data_gen = data_gens[i]
 
             network.optimizer.zero_grad()
-            if i == attacker_id:
+            if i == attacker_id and not args.mia:
                 batch = next(adv_gen)
                 inputs, targets = batch
                 targets = targets[:, 0]
-            elif i == victim_id:  # k번째마다 property가 포함됨, 나머지는 포함 X
+            elif i == victim_id and not args.mia:  # k번째마다 property가 포함됨, 나머지는 포함 X
                 if it % k == 0:
                     inputs, targets = next(data_gen_p)
                 else:
@@ -539,7 +584,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
                 network.clipper.step()
                 for param in params.keys():
 
-                    params[param].grad += gaussian_noise(params[param].shape, args.clip/32, args.ep, device=device)
+                    params[param].grad += gaussian_noise(params[param].shape, args.clip/args.bs, args.ep, device=device)
                     grads_dict[param] = copy.deepcopy(params[param].grad)              
             else:
                 if args.cdp:
@@ -579,7 +624,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
                     network_IFCA.clipper.step()
                     for param in params.keys():
 
-                        params_IFCA[param].grad += gaussian_noise(params_IFCA[param].shape, args.clip/32, args.ep, device=device)
+                        params_IFCA[param].grad += gaussian_noise(params_IFCA[param].shape, args.clip/args.bs, args.ep, device=device)
 
                         grads_dict[param] = copy.deepcopy(params_IFCA[param].grad)
                 else:
@@ -610,7 +655,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
 
         for i in range(n_workers):  # update clustered global models
             w_index = cluster_global_index[i]
-            update_global(cluster_params[w_index], cluster_global_grads[i], lr * 32, cluster_global_isize[i])
+            update_global(cluster_params[w_index], cluster_global_grads[i], lr * args.bs, cluster_global_isize[i])
 
 
         if args.cdp:
@@ -709,7 +754,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
             fl_auc = AUROCMetric()
 
             with torch.no_grad():
-                for batch in gen_batch(splitted_X_test, splitted_y_test, 32):
+                for batch in gen_batch(splitted_X_test, splitted_y_test, args,args.bs):
                     inputs, targets = batch
                     input_tensor = torch.from_numpy(inputs).to(device)
                     pred = network_global(input_tensor).cpu()
