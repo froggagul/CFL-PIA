@@ -25,6 +25,20 @@ def add_nonprop(test_prop_indices, nonprop_indices, p_prop=0.7):
     nonprop_indices = np.setdiff1d(nonprop_indices, sampled_non_prop)  # left nonprop
     return sampled_non_prop, nonprop_indices
 
+def split_mia_data_hetero(X, y, n_workers, alpha=0.5, min_size_limit=60):
+    splitted_X = []
+    splitted_y = []
+
+    classes = len(np.unique(y))
+    split_index = split_hetero(y, classes, n_workers, alpha, min_size_limit)
+
+    for i in range(n_workers):
+        xx = X[split_index[i]]
+        yy = y[split_index[i]]
+        splitted_X.append(xx)
+        splitted_y.append(yy)
+
+    return splitted_X, splitted_y
 
 def split_data_hetero(X, y, n_workers, alpha=0.5, min_size_limit=60):
     splitted_X = []
@@ -40,7 +54,6 @@ def split_data_hetero(X, y, n_workers, alpha=0.5, min_size_limit=60):
         splitted_y.append(yy)
 
     return splitted_X, splitted_y
-
 
 def split_hetero(y_train, K, n_nets, alpha, min_size_limit):
     min_size = 0  # batch 내 가장 적은 데이터 수 --> min_size_limit 보다 클 때까지 반복 샘플링
@@ -65,12 +78,44 @@ def split_hetero(y_train, K, n_nets, alpha, min_size_limit):
 
     return idx_batch
 
-
-def prepare_data_biased(data, train_size=0.5, n_workers=5, p_prop=0.5, shuffle=True, balance=False, seed=None,
-                        victim_all_nonprop=False, test_size=0.3):
+def prepare_mia_data_biased(data, train_size=0.5, n_workers=5, p_prop=0.5, shuffle=True, balance=False, seed=None,
+                        victim_all_nonprop=False, test_size=0.2,args=None):
     if seed is not None:
         np.random.seed(seed)
+    if args.data_type == "cifar100":
+        test_size = 0.2
+    # only victim has biased data
+    X, y = data
 
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=seed, test_size=test_size, stratify=y)
+    print("Training data size {}, testing data size {}".format(len(X_train), len(X_test)))
+
+    # other participants only has non prop data
+    # splitted_X, splitted_y = split_data_mt(X_train[nonprop_indices], y_train[nonprop_indices], n_workers - 1)
+    splitted_X, splitted_y = split_mia_data_hetero(X_train, y_train, n_workers)
+
+    n_sum = 0
+    for temp_i, temp_v in enumerate(splitted_X):
+        if temp_i == 0:
+            n_sum += temp_v[0].shape[0] + temp_v[1].shape[0]
+        else:
+            n_sum += temp_v.shape[0]
+    n_avg = int(n_sum / len(splitted_X))
+    print("Average data size per device:", str(n_avg))
+    n_test_devices = int(len(X_test) / float(n_avg))
+    print("Splitted testdata to", n_test_devices, "devices")
+
+    test_splitted_X, test_splitted_y = split_mia_data_hetero(X_test, y_test, n_test_devices)
+
+    return splitted_X, splitted_y, X_test, y_test, test_splitted_X, test_splitted_y
+
+def prepare_data_biased(data, train_size=0.5, n_workers=5, p_prop=0.5, shuffle=True, balance=False, seed=None,
+                        victim_all_nonprop=False, test_size=0.3,args=None):
+    if seed is not None:
+        np.random.seed(seed)
+    if args.data_type == "cifar100":
+        test_size = 0.2
     # only victim has biased data
     X, y, p = data
 
@@ -98,7 +143,7 @@ def prepare_data_biased(data, train_size=0.5, n_workers=5, p_prop=0.5, shuffle=T
     train_prop_indices = np.random.choice(prop_indices, prop_train_size, replace=False)  # prop data for attacker
     victim_prop_indices = np.setdiff1d(prop_indices, train_prop_indices)  # prop data for victim
 
-    if balance:  # give all victim prop with same probability
+    if balance or args.mia:  # give all victim prop with same probability
         n_per_worker = len(X_train) // n_workers
         p_prop_bal = float(len(victim_prop_indices)) / n_per_worker
         print(len(victim_prop_indices), n_per_worker, p_prop_bal)

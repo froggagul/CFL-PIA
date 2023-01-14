@@ -1,11 +1,16 @@
 from .load_lfw import load_lfw_with_attrs
 from .load_yelp import load_yelp_author_with_attrs
+from .load_cifar100 import load_cifar100_with_attrs, load_cifar10_with_attrs
 
 def load_data(data_type, main_attr, infer_attr):
     if data_type == "lfw":
         return load_lfw_with_attrs(main_attr, infer_attr)
     elif data_type == "yelp-author":
         return load_yelp_author_with_attrs(main_attr, infer_attr)
+    elif data_type == "cifar100":
+        return load_cifar100_with_attrs()
+    elif data_type == "cifar10":
+        return load_cifar10_with_attrs()
     else:
         raise NotImplemented(f"{data_type} not exists in current version of code")
 
