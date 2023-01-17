@@ -838,8 +838,9 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
         args
         )
     checkpoint.save(os.path.join(MODEL_SAVE_DIR, args.project, filename))
-    filepath = os.path.join(GRAD_SAVE_DIR, args.project, "{}.npz".format(filename))
+    filepath = os.path.join(GRAD_SAVE_DIR, "{}.npz".format(filename))
     os.makedirs(os.path.join(GRAD_SAVE_DIR, args.project), exist_ok=True)
+    print(filepath)
 
     np.savez(filepath,
              train_pg=train_pg, train_npg=train_npg, test_pg=test_pg, test_npg=test_npg,
