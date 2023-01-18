@@ -132,13 +132,13 @@ def train(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_clus
 
     print(x.shape, y.shape, prop.shape)
     if not args.mia:
-        filename = f"{args.project}/{args.t}_{args.a}_{args.pi}_{args.nw}_{wandb.run.name}"
+        filename = f"{args.project}/{args.t}_{args.a}_{args.pi}_{args.nw}_{wandb.run.name}_{args.ds}"
         if args.ldp:
-            filename = f"{args.project}/ldp_{args.t}_{args.a}_{args.pi}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"
+            filename = f"{args.project}/ldp_{args.t}_{args.a}_{args.pi}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}_{args.ds}"
         elif args.cdp:
-            filename = f"{args.project}/cdp_{args.t}_{args.a}_{args.pi}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"
+            filename = f"{args.project}/cdp_{args.t}_{args.a}_{args.pi}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}_{args.ds}"
     else:
-        filname =  f"{args.project}/mia_{args.data_type}_{args.nw}_{args.nc}_{wandb.run.name}"
+        filname =  f"{args.project}/mia_{args.data_type}_{args.nw}_{args.nc}_{wandb.run.name}_{args.ds}"
 
 
     # indices = np.arange(len(x))
