@@ -671,7 +671,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
         result_count = [0]
         print_index(cluster_global_index, result_count)
 
-        warm_up_iters = 2
+        warm_up_iters = 100
         if it >= warm_up_iters and not args.mia:
             
             test_gs = aggregate_dicts(aggr_grad)
@@ -837,7 +837,10 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
         worker_networks_IFCA,
         args
         )
-    checkpoint.save(os.path.join(MODEL_SAVE_DIR, args.project, filename))
+    try:
+        checkpoint.save(os.path.join(MODEL_SAVE_DIR, args.project, filename))
+    except:
+        print("checkpoint save failed")
     filepath = os.path.join(GRAD_SAVE_DIR, "{}.npz".format(filename))
     os.makedirs(os.path.join(GRAD_SAVE_DIR, args.project), exist_ok=True)
     print(filepath)
