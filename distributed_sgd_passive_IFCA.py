@@ -132,11 +132,11 @@ def train(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_clus
 
     print(x.shape, y.shape, prop.shape)
     if not args.mia:
-        filename = f"{args.project}/{args.t}_{args.a}_{args.nw}_{wandb.run.name}"
+        filename = f"{args.project}/{args.t}_{args.a}_{args.pi}_{args.nw}_{wandb.run.name}"
         if args.ldp:
-            filename = f"{args.project}/ldp_{args.t}_{args.a}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"
+            filename = f"{args.project}/ldp_{args.t}_{args.a}_{args.pi}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"
         elif args.cdp:
-            filename = f"{args.project}/cdp_{args.t}_{args.a}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"
+            filename = f"{args.project}/cdp_{args.t}_{args.a}_{args.pi}_{args.nw}_{args.ep}_{args.clip}_{wandb.run.name}"
     else:
         filname =  f"{args.project}/mia_{args.data_type}_{args.nw}_{args.nc}_{wandb.run.name}"
 
@@ -671,7 +671,7 @@ def train_multi_task_ps(data, num_iteration=6000, train_size=0.3, victim_id=0, w
         result_count = [0]
         print_index(cluster_global_index, result_count)
 
-        warm_up_iters = 100
+        warm_up_iters = 2
         if it >= warm_up_iters and not args.mia:
             
             test_gs = aggregate_dicts(aggr_grad)
