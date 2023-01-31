@@ -174,7 +174,7 @@ def train(task='gender', attr='race', prop_id=2, p_prop=0.5, n_workers=2, n_clus
     else:
         train_multi_task_ps(
             (x, y, prop),
-            input_shape=(3, 62, 47),
+            input_shape=x[0].shape,
             p_prop=p_prop,  # balance=balance,
             filename=filename,
             n_workers=n_workers,

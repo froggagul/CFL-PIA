@@ -64,3 +64,21 @@ class NMCNN(Model):  # 최종 classifier, optimizer 등
         x = F.softmax(self.fc2(x), dim=1)
 
         return x
+
+@ModelFactory.register('nm_cnn')
+class NMCNN(Model):  # 최종 classifier, optimizer 등
+    def __init__(self, classes=2, input_shape=(3, 50, 50), lr=0.01, n=128,args=None):
+        super().__init__()
+        self.fe = cnn_feat_extractor(input_shape, n)
+        self.fc2 = nn.Linear(256, classes)
+        self.criterion = nm_loss
+        self.optimizer = optim.SGD(self.parameters(), lr)
+        if args.ldp:
+            self.clipper = PerSampleGradientClipper(self,args.clip)
+            #self.criterion = nn.CrossEntropyLoss()#(reduction='none')
+            
+    def forward(self, x):
+        x = self.fe(x)
+        x = F.softmax(self.fc2(x), dim=1)
+
+        return x
